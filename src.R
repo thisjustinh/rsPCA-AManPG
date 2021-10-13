@@ -1,5 +1,16 @@
+set.seed(1)
+z <- normalize(mvrnorm(n=30, mu=rep(0, 10), Sigma=sigma))
+l1 <- 0.1
+k <- 2
+tol=1e-5
+maxiter=1000
+fmax=1e6
+type=0 
+gamma=0.5
+verbose=TRUE
+
 rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0, 
-                         gamma=0.5, normalize=TRUE, verbose=TRUE) {
+                         gamma=0.5, normalize=TRUE, verbose=FALSE) {
   start <- Sys.time()
   
   if (normalize) {
@@ -11,7 +22,7 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
   d <- dims[2]
   
   if (d < m * 2) {
-    z <- Conj(t(z)) %*% z
+    z <- t(z) %*% z
     type <- 1
   }
   
@@ -27,6 +38,7 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
     t <- 1 / (2 * svds$d[1])
   }
   
+  linesearch_flag <- 1
   total_linesearch <- 0
   min_step <- 0
   alpha <- 100 / d
@@ -40,17 +52,18 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
     }
     
     ### Update A ###
-    # TODO: Solve for A subproblem
-    da = 0
+    s = -2*t*(z-a %*% t(b)) %*% b
+    da = s - (a %*% t(a) %*% s + a %*% t(s) %*% a) / 2
+    print(dim(da))
     
     ## Retract ##
     if (!linesearch_flag) alpha <- alpha * 1.1
-    if (min_step == 1) alpha <- 1 / d
+    if (min_step) alpha <- 1 / d
     linesearch_flag <- 0
     min_step <- 0
     
     xi <- alpha * da
-    retracted_a <- (a + xi) %*% (diag(r) + t(xi) %*% xi) ^ (-1/2)
+    retracted_a <- (a + xi) %*% (diag(1, k) + t(xi) %*% xi) ^ (-1/2)
     
     while (sum(2*x*(a - retracted_a)) > -(a/(2*t)) * norm(da)^2) {
       alpha <- gamma * alpha
@@ -60,8 +73,9 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
       }
       
       linesearch_flag <- 1
+      total_linesearch <- total_linesearch + 1
       xi <- alpha * da
-      retracted_a <- (a + xi) %*% (diag(r) + t(xi) %*% xi) ^ (-1/2)
+      retracted_a <- (a + xi) %*% (diag(1, k) + t(xi) %*% xi) ^ (-1/2)
     }
     
     a <- retracted_a
@@ -94,8 +108,14 @@ normalize <- function(x, center=TRUE, scale=TRUE) {
   }
   
   if (scale) {
-    dims <- dim(x)
-    x <- x / matrix(sqrt(rowSums(x^2)), nrow=dims[1], ncol=dims[2])
+    if (is.matrix(x)) {
+      dims <- dim(x)
+      x <- x / matrix(sqrt(rowSums(x^2)), nrow=dims[1], ncol=dims[2])
+    } else if (is.numeric(x)) {
+      x <- x / sqrt(sum(x^2))
+    } else {
+      stop("'x' must be a numeric vector or matrix")
+    }
   }
   
   return(x)
