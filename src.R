@@ -18,30 +18,31 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
   }
   
   dims <- dim(z)
-  m <- dims[1]
-  d <- dims[2]
+  n <- dims[1]
+  p <- dims[2]
   
-  if (d < m * 2) {
+  if (p < n * 2) {
     z <- t(z) %*% z
     type <- 1
   }
   
   ### Initialized values ###
-  svds <- svd(z, nu=k, nv=k)
-  a <- normalize(svds$u, center=FALSE)
-  b <- svds$d * svds$v
+  init_svd <- svd(z, nu=k, nv=k)
+  a <- normalize(init_svd$u, center=FALSE)
+  b <- init_svd$d * init_svd$v
   
+  ata <- t(a) %*% a
+  btb <- t(b) %*% b
+   
   # Get Lipschitz
-  if (!type) {
-    t <- 1 / (2 * svds$d[1]^2)  # TODO: Why is svd involved? can I use norm(x)^2?
-  } else {
-    t <- 1 / (2 * svds$d[1])
-  }
+  # TODO: Need to be different depending on what matrix I use?
+  stepsize_a <- 1 / (2 * svd(ata)$d[1])
+  stepsize_b <- 1 / (2 * svd(btb)$d[1])
   
   linesearch_flag <- 1
   total_linesearch <- 0
   min_step <- 0
-  alpha <- 100 / d
+  alpha <- 100 / p
   
   ### Main Loop ###
   for (iter in 1:maxiter) {
@@ -52,8 +53,9 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
     }
     
     ### Update A ###
-    s = -2*t*(z-a %*% t(b)) %*% b
-    da = s - (a %*% t(a) %*% s + a %*% t(s) %*% a) / 2
+    # s = 2*t*(z-a %*% t(b)) %*% b
+    grad_a <- 2 * stepsize_a * (z %*% b - a %*% btb)  # well it's negative grad a times 2
+    da <- grad_a - (a %*% t(a) %*% grad_a + a %*% t(grad_a) %*% a) / 2
     print(dim(da))
     
     ## Retract ##
@@ -63,9 +65,9 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
     min_step <- 0
     
     xi <- alpha * da
-    retracted_a <- (a + xi) %*% (diag(1, k) + t(xi) %*% xi) ^ (-1/2)
+    retracted_a <- polar_decomp(a, xi)
     
-    while (sum(2*x*(a - retracted_a)) > -(a/(2*t)) * norm(da)^2) {
+    while (norm(z-retracted_a %*% t(b))^2 - norm(z-a %*% t(b))^2> -(alpha/(2*stepsize_a)) * norm(da)^2) {
       alpha <- gamma * alpha
       if (alpha < 1e-5 / d) {
         min_step <- 1
@@ -75,21 +77,21 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
       linesearch_flag <- 1
       total_linesearch <- total_linesearch + 1
       xi <- alpha * da
-      retracted_a <- (a + xi) %*% (diag(1, k) + t(xi) %*% xi) ^ (-1/2)
+      retracted_a <- polar_decomp(a, xi)
     }
     
     a <- retracted_a
+    ata <- t(a) %*% a
     
     ## Update B ##
-    c <- b + 2 * t * t(z - a %*% t(b)) %*% a
-    db <- c - b + t * sign(c) * matrix(as.numeric(abs(mat) > l1), nrow=d, ncol=k)  # done element-wise
+    c <- b + 2 * stepsize_b * (t(z) %*% a - b %*% ata)
+    db <- c - b + stepsize_b * sign(c) * matrix(as.numeric(abs(c) > l1), nrow=d, ncol=k)  # done element-wise
     b <- db
+    btb <- t(b) %*% b
     
-    check <- norm(da/t)^2 + norm(db/t)^2
+    check <- norm(da/stepsize_a)^2 + norm(db/stepsize_b)^2
     
     if (verbose) {
-      print(paste("da:", da))
-      print(paste("db:", db))
       print(paste("sum:", check))
       print(paste("time:", difftime(Sys.time(), iter_start)))
     }
@@ -100,6 +102,14 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
       break
     }
   }
+}
+
+polar_decomp <- function(x, xi) {
+  eigendecomp_xi <- eigen(diag(1, dim(xi)[2]) + t(xi) %*% xi, 
+                          symmetric = TRUE)
+  u <- eigendecomp_xi$vectors
+  half_power <- u %*% diag(sqrt(1 / eigendecomp_xi$values)) %*% t(u)
+  return((x + xi) %*% half_power)
 }
 
 normalize <- function(x, center=TRUE, scale=TRUE) {
