@@ -1,4 +1,5 @@
 library(MASS)
+library(ltsspca)
 
 v1 <- c(1,1,1,1,0,0,0,0,0.9,0.9)
 v2 <- c(0,0,0,0,1,1,1,1,-0.3,0.3)
@@ -20,4 +21,7 @@ sigma <- v %*% c %*% t(v)
 set.seed(1)
 x <- mvrnorm(n=30, mu=rep(0, 10), Sigma=sigma)
 
-rsprout <- rspca.amanpg(x, 0.1, 2, verbose=TRUE)
+sprout <- rspca.amanpg(x, 1, 2, verbose=TRUE)
+amanpg <- spca.amanpg(x, 1, 0.1, k=2, normalize=TRUE)
+
+rsprout <- sPCA_rSVD(x, 2, center=T)
