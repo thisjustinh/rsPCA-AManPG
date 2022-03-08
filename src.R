@@ -1,13 +1,13 @@
-# set.seed(1)
-# z <- normalize(mvrnorm(n=30, mu=rep(0, 10), Sigma=sigma))
-# l1 <- 1
-# k <- 2
-# tol=1e-5
-# maxiter=1000
-# fmax=1e6
-# type=0 
-# gamma=0.5
-# verbose=TRUE
+set.seed(1)
+z <- normalize(mvrnorm(n=30, mu=rep(0, 10), Sigma=sigma))
+l1 <- 1
+k <- 2
+tol=1e-5
+maxiter=1000
+fmax=1e6
+type=0
+gamma=0.5
+verbose=TRUE
 
 rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0, 
                          gamma=0.5, normalize=TRUE, verbose=FALSE) {
@@ -28,14 +28,13 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
   
   ### Initialized values ###
   init_svd <- svd(z, nu=k, nv=k)
-  a <- init_svd$u / norm(init_svd$u)
+  a <- init_svd$u / norm(init_svd$u, 'F')
   b <- init_svd$d[1] * init_svd$v
 
   ata <- t(a) %*% a
   btb <- t(b) %*% b
    
   # Get Lipschitz
-  # TODO: Need to be different depending on what matrix I use?
   # stepsize_a <- 0.01
   stepsize_a <- 1 / (2 * svd(ata)$d[1])
   stepsize_b <- 1 / (2 * svd(btb)$d[1])
@@ -47,8 +46,10 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
   
   grad_a <- 2 * stepsize_a * (z - a %*% t(b)) %*% b
 
+  f = norm(z - a %*% t(b), 'F')^2 + l1 * sum(abs(b))
+  
   ### Main Loop ###
-  for (iter in 1:maxiter) {
+  for (iter in 2:maxiter) {
     if (verbose) {
       iter_start <- Sys.time()
       print("=================")
@@ -57,7 +58,8 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
     
     ### Update A ###
     # s = 2*t*(z-a %*% t(b)) %*% b
-    da <- grad_a - (a %*% t(a) %*% grad_a + a %*% t(grad_a) %*% a) / 2
+    gtx <- t(grad_a) %*% a
+    da <- grad_a - a %*% (gtx + t(gtx)) / 2
 
     ## Retract ##
     if (!linesearch_flag) alpha <- alpha * 1.1
@@ -67,18 +69,20 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
     
     xi <- alpha * da
     retracted_a <- polar_decomp(a, xi)
-    
-    while (norm(z-retracted_a %*% t(b))^2 - norm(z-a %*% t(b))^2+(alpha/(2*stepsize_a)) * norm(da)^2 > 0) {
+    norm_retract <- norm(z - retracted_a %*% t(b), 'F')^2
+        
+    while (norm_retract > norm(z - a %*% t(b), 'F')^2 - (alpha / (2*stepsize_a)) * norm(da, 'F')^2) {
       alpha <- gamma * alpha
       if (alpha < 1e-5 / p) {
         min_step <- 1
         break
       }
-      
+
       linesearch_flag <- 1
       total_linesearch <- total_linesearch + 1
       xi <- alpha * da
       retracted_a <- polar_decomp(a, xi)
+      norm_retract <- norm(z - retracted_a %*% t(b), 'F')^2 
     }
     
     a <- retracted_a
@@ -89,7 +93,7 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
     c <- b + grad_b
     tmp <- abs(c) - as.vector(l1 * stepsize_b)
     if (k < 15) act_set <- as.numeric(tmp > 0) else act_set <- tmp > 0
-    new_b <-  tmp * act_set * sign(c) # this is b + db
+    db <-  tmp * act_set * sign(c) - b
     # db <- matrix(1, nrow=p, ncol=k)
     # for (i in 1:p) {
     #   for (j in 1:k) {
@@ -102,7 +106,7 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
     #if (k < 15) act_set <- as.numeric(tmp > 0) else act_set <- tmp > 0
     #db <- act_set * sign(c) * stepsize_b
     
-    b <- new_b
+    b <- b + db
     btb <- t(b) %*% b
     
     ### Check for convergence ###
@@ -112,15 +116,23 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
     # grad_b <- 2 * stepsize_b * (t(z) %*% a - b %*% ata)
     grad_a <- 2 * stepsize_a * (z - a %*% t(b)) %*% b
     grad_b <- 2 * stepsize_b * t(z - a %*%  t(b)) %*% a
-    check <- norm(-grad_a/stepsize_a - grad_b/stepsize_b) - norm(prev_grad)
+    # check <- norm(-grad_a/stepsize_a - grad_b/stepsize_b, 'F')^2 # - norm(prev_grad, 'F')
+    
+    f <- c(f, norm(z - a %*% t(b), 'F')^2 + l1 * sum(abs(b)))
+    check <- abs(f[iter] - f[iter-1])
     
     if (verbose) {
       print(paste("difference:", check))
       print(paste("time:", difftime(Sys.time(), iter_start)))
+      print(paste("loss:", f[iter]))
     }
     
-    if (abs(check) <= tol && check < fmax) {
-      if (verbose) print(paste("Final difference:", check))
+    # if (abs(check) <= tol || check > fmax) {
+    #   if (verbose) print(paste("Final difference:", check))
+    #   break
+    # }
+    if(check <= tol || check > fmax) {
+      if (verbose) print(paste("Final difference: ", check))
       break
     }
   }
@@ -166,3 +178,6 @@ normalize <- function(x, center=TRUE, scale=TRUE) {
   
   return(x)
 }
+
+# sprout <- rspca.amanpg(x, 1, 2, verbose=TRUE, maxiter=2000)
+# sprout
