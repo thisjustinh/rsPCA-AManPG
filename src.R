@@ -1,14 +1,3 @@
-# set.seed(1)
-# z <- normalize(mvrnorm(n=30, mu=rep(0, 10), Sigma=sigma))
-# l1 <- 1
-# k <- 2
-# tol=1e-5
-# maxiter=1000
-# fmax=1e6
-# type=0
-# gamma=0.5
-# verbose=TRUE
-
 rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0, 
                          gamma=0.5, normalize=TRUE, verbose=FALSE) {
   start <- Sys.time()
@@ -21,10 +10,10 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
   n <- dims[1]
   p <- dims[2]
   
-  # if (p < n * 2 && n > 100) {
-  #   z <- t(z) %*% z
-  #   type <- 1
-  # }
+  if (p < n * 2 && n > 100) {
+    z <- t(z) %*% z
+    type <- 1
+  }
   
   ### Initialized values ###
   init_svd <- svd(z, nu=k, nv=k)
@@ -35,7 +24,6 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
   btb <- t(b) %*% b
    
   # Get Lipschitz
-  # stepsize_a <- 0.01
   stepsize_a <- 1 / (2 * svd(ata)$d[1])
   stepsize_b <- 1 / (2 * svd(btb)$d[1])
   
@@ -106,6 +94,7 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
 
     f <- c(f, norm(z - a %*% t(b), 'F')^2 + l1 * sum(abs(b)))
     check <- abs(f[iter] - f[iter-1])
+    # check <- max(1 - diag(abs(crossprod(b, oldb))))
     
     if (verbose) {
       print(paste("difference:", check))
@@ -118,7 +107,7 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
     #   break
     # }
     if(check <= tol || check > fmax) {
-      if (verbose) print(paste("Final difference: ", check))
+      # if (verbose) print(paste("Final difference: ", check))
       break
     }
   }
@@ -139,7 +128,8 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
     b=b,
     loadings=loadings,
     sparsity=sum(b == 0) / (p * k),
-    time=difftime(Sys.time(), start)
+    time=difftime(Sys.time(), start),
+    loss=f
   ))
 }
 
