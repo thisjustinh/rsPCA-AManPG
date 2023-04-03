@@ -39,6 +39,8 @@ spca.rsvd <- function (x, k = 1, n = 2, maxit = 500, tol = 0.001, lambda = 1, ce
     z <- apply(a, 2, sort)
     lambda <<- vapply(seq(length(p)), function(j) (1 - alpha) * 
                         z[p[j], j] + alpha * z[p[j] + 1, j], pi, USE.NAMES = FALSE)
+    # lambda <- rep(lambda, k)
+    lambda <- c(0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5)
     sign(y) * pmax(sweep(a, 2, lambda, `-`), 0)
     # sign(y) * pmax(y - lambda, 0)
   }

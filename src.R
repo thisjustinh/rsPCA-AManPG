@@ -24,9 +24,13 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
   btb <- t(b) %*% b
    
   # Get Lipschitz
-  stepsize_a <- 1 / (2 * svd(ata)$d[1])
-  stepsize_b <- 1 / (2 * svd(btb)$d[1])
-  
+  stepsize_a <- 1 / (2 * svd(btb)$d[1])
+  stepsize_b <- 1 / (2 * svd(ata)$d[1])
+  # print(stepsize_a)
+  # print(stepsize_b)
+  stepsize_a <- 1.2
+  stepsize_b <- 0.05
+
   linesearch_flag <- 1
   total_linesearch <- 0
   min_step <- 0
@@ -38,7 +42,7 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
   grad_b <- 2 * stepsize_b * (t(z) %*% a - b %*% ata)
 
   f = norm(z - a %*% t(b), 'F')^2 + l1 * sum(abs(b))
-  
+
   ### Main Loop ###
   for (iter in 2:maxiter) {
     if (verbose) {
@@ -48,9 +52,11 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
     }
     
     ### Update A ###
-    # s = 2*t*(z-a %*% t(b)) %*% b
+    # s = 2*stepsize_a*grad_a
+    # da <- s - (a*t(a)*s+a*t(s)*a) / 2
     gtx <- t(grad_a) %*% a
     da <- grad_a - a %*% (gtx + t(gtx)) / 2
+    # da <- grad_a - (a %*% t(a) %*% grad_a + a %*% t(grad_a) %*% a) / 2
 
     ## Retract ##
     if (!linesearch_flag) alpha <- alpha * 1.1
@@ -81,19 +87,22 @@ rspca.amanpg <- function(z, l1, k, tol=1e-5, maxiter=1000, fmax=1e6, type=0,
     
     ## Update B ##
     c <- b + grad_b
-    tmp <- abs(c) - as.vector(l1 * stepsize_b)
+    # tmp <- abs(c) - as.vector(l1 * stepsize_b)
+    tmp <- abs(c) - as.vector(l1)
     if (k < 15) act_set <- as.numeric(tmp > 0) else act_set <- tmp > 0
     db <-  tmp * act_set * sign(c) - b
     
     b <- b + db
+  
     btb <- t(b) %*% b
     
     ### Check for convergence ###
-    grad_a <- 2 * stepsize_a * (z - a %*% t(b)) %*% b
+    grad_a <- 2 * stepsize_a * (z %*% b - a %*% btb)
     grad_b <- 2 * stepsize_b * (t(z) %*% a - b %*% ata)
 
     f <- c(f, norm(z - a %*% t(b), 'F')^2 + l1 * sum(abs(b)))
     check <- abs(f[iter] - f[iter-1])
+    # check <- norm(grad_a / stepsize_a + grad_b / stepsize_b)
     # check <- max(1 - diag(abs(crossprod(b, oldb))))
     
     if (verbose) {
